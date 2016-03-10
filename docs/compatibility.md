@@ -1,7 +1,5 @@
 # Compatibility
 
-> The project is still in development, so expect many changes in this document.
-
 The compiler follows two rough guidelines when transforming the code:
 
 * Keep the [core library](/lib/fable-core.js) small, so fall back to native JS methods when possible.
@@ -82,8 +80,8 @@ Active patterns can be used normally.
 
 ## Generics
 Generic information disappears in generated code. However, they're accessible
-to the compiler so functions like `typeof<MyType>` are possible with concrete
-types (they'll be accessible to plugins too).
+to the compiler, so calls like `typeof<MyType>` are possible with concrete
+types or with generics in **inline** functions.
 
 ## Attributes
 Decorators are coming to JavaScript. However, there are competing proposals

@@ -1,6 +1,0 @@
-{
-    "outDir": "../build/test",
-    "symbols": [],
-    "lib": "../../lib",
-    "env": "node"
-}
