@@ -1,8 +1,104 @@
 [<NUnit.Framework.TestFixture>] 
 module Fable.Tests.Arrays
+
+open System
 open NUnit.Framework
 open Fable.Tests.Util
 open System.Collections.Generic
+open Fable.Core
+
+// TODO
+// [<Test>]
+// let ``Pattern matching with arrays works``() =
+//     match [||] with [||] -> true | _ -> false
+//     |> equal true
+//     match [|1|] with [||] -> 0 | [|x|] -> 1 | _ -> 2
+//     |> equal 1
+//     match [|"a";"b"|] with [||] -> 0 | [|"a";"b"|] -> 1 | _ -> 2
+//     |> equal 1
+
+type ParamArrayTest =
+    static member Add([<ParamArray>] xs: int[]) = Array.sum xs
+
+let add (xs: int[]) = ParamArrayTest.Add(xs)
+
+[<Test>]
+let ``ParamArrayAttribute works``() =  
+    ParamArrayTest.Add(1, 2) |> equal 3
+
+[<Test>]
+let ``Passing an array to ParamArrayAttribute works``() =  
+    ParamArrayTest.Add([|3; 2|]) |> equal 5
+
+[<Test>]
+let ``Passing an array to ParamArrayAttribute from another function works``() =  
+    add [|5;-7|] |> equal -2
+
+#if MOCHA
+[<Emit("$1.constructor.name == $0")>]
+let jsConstructorIs (s: string) (ar: 'T[]) = true 
+
+[<Test>]
+let ``Typed Arrays work``() =  
+    let xs = [| 1; 2; 3; |]
+    let ys = [| 1.; 2.; 3.; |]
+    let zs = [| "This is a string" |]
+    xs |> jsConstructorIs "Int32Array" |> equal true
+    ys |> jsConstructorIs "Float64Array" |> equal true
+    zs |> jsConstructorIs "Array" |> equal true
+
+[<Test>]
+let ``Mapping from Typed Arrays work``() =  
+    [| 1; 2; 3; |]
+    |> Array.map string
+    |> jsConstructorIs "Int32Array"
+    |> equal false
+
+[<Test>]
+let ``Mapping to Typed Arrays work``() =  
+    [| "1"; "2"; "3"; |]
+    |> Array.map int
+    |> jsConstructorIs "Int32Array"
+    |> equal true
+    
+    [| 1; 2; 3; |]
+    |> Array.map float
+    |> jsConstructorIs "Float64Array"
+    |> equal true
+#endif
+
+let f (x:obj) (y:obj) (z:obj) = (string x) + (string y) + (string z)
+
+[<Test>]
+let ``Mapping from values to functions works``() =  
+    let a = [| "a"; "b"; "c" |]
+    let b = [| 1; 2; 3 |]
+    let concaters1 = a |> Array.map (fun x y -> y + x)
+    let concaters2 = a |> Array.map (fun x -> (fun y -> y + x))
+    let concaters3 = a |> Array.map (fun x -> let f = (fun y -> y + x) in f)
+    let concaters4 = a |> Array.map f
+    let concaters5 = b |> Array.mapi f
+    concaters1.[0] "x" |> equal "xa"
+    concaters2.[1] "x" |> equal "xb"
+    concaters3.[2] "x" |> equal "xc"
+    concaters4.[0] "x" "y" |> equal "axy"
+    concaters5.[1] "x" |> equal "12x"
+    let f2 = f
+    a |> Array.mapi f2 |> Array.item 2 <| "x" |> equal "2cx"
+
+[<Test>]
+let ``Byte arrays are not clamped by default``() =
+    let ar = [|5uy|]
+    ar.[0] <- ar.[0] + 255uy
+    equal 4uy ar.[0]
+
+#if MOCHA
+[<Test>]
+let ``Clamped byte arrays work``() =
+    let ar = Util2.Helper2.CreateClampedArray()
+    ar.[0] <- ar.[0] + 255uy
+    equal 255uy ar.[0]
+#endif
 
 [<Test>]
 let ``Array slice with upper index work``() =  
@@ -62,34 +158,37 @@ let ``Array.zeroCreate works``() =
     equal 2 xs.Length
     equal 0 xs.[1]
 
-// [<Test>]
-// let ``Array.blit works``() =   
-//     let xs = [|1.; 2.; 3.; 4.|]
-//     let ys = Array.zeroCreate 2
-//     Array.blit xs 2 ys 0 2
-//     ys.[0] + ys.[1]
-//     |> equal 1
-// 
-// [<Test>]
-// let ``Array.copy works``() =   
-//     let xs = [|1.; 2.; 3.; 4.|]
-//     let ys = Array.copy xs
-//     ys.[0] + ys.[1]
-//     |> equal 1
-// 
-// [<Test>]
-// let ``Array.sub works``() =   
-//     let xs = [|1.; 2.; 3.; 4.|]
-//     let ys = Array.sub xs 2 2
-//     ys.[0] + ys.[1]
-//     |> equal 1
+[<Test>]
+let ``Array.create works``() =   
+    let xs = Array.create 2 5
+    equal 2 xs.Length
+    Array.sum xs |> equal 10
 
-// [<Test>]
-// let ``Array.fill works``() =   
-//     let xs = Array.zeroCreate 2
-//     Array.fill xs 0 2 2.
-//     xs.[0] + xs.[1]
-//     |> equal 1
+[<Test>]
+let ``Array.blit works``() =   
+    let xs = [|1..10|]
+    let ys = Array.zeroCreate 20
+    Array.blit xs 3 ys 5 4        // [|0; 0; 0; 0; 0; 4; 5; 6; 7; 0; 0; 0; 0; 0; 0; 0; 0; 0; 0; 0|]
+    ys.[5] + ys.[6] + ys.[7] + ys.[8] |> equal 22
+
+[<Test>]
+let ``Array.copy works``() =   
+    let xs = [|1; 2; 3; 4|]
+    let ys = Array.copy xs
+    xs.[0] <- 0                   // Ensure a deep copy
+    ys |> Array.sum |> equal 10
+
+[<Test>]
+let ``Array.sub works``() =   
+    let xs = [|0..99|]
+    let ys = Array.sub xs 5 10    // [|5; 6; 7; 8; 9; 10; 11; 12; 13; 14|]
+    ys |> Array.sum |> equal 95
+
+[<Test>]
+let ``Array.fill works``() =   
+    let xs = Array.zeroCreate 4   // [|0; 0; 0; 0|]
+    Array.fill xs 1 2 3           // [|0; 3; 3; 0|]
+    xs |> Array.sum |> equal 6
 
 [<Test>]
 let ``Array.empty works``() =   
@@ -169,6 +268,30 @@ let ``Array.findIndex works``() =
     let xs = [|1.f; 2.f; 3.f; 4.f|]
     xs |> Array.findIndex ((=) 2.f)
     |> equal 1
+
+[<Test>]
+let ``Array.findBack works``() =
+    let xs = [|1.; 2.; 3.; 4.|]
+    xs |> Array.find ((>) 4.) |> equal 1.
+    xs |> Array.findBack ((>) 4.) |> equal 3.
+
+[<Test>]
+let ``Array.findIndexBack works``() =
+    let xs = [|1.; 2.; 3.; 4.|]
+    xs |> Array.findIndex ((>) 4.) |> equal 0
+    xs |> Array.findIndexBack ((>) 4.) |> equal 2
+
+[<Test>]
+let ``Array.tryFindBack works``() =
+    let xs = [|1.; 2.; 3.; 4.|]
+    xs |> Array.tryFind ((>) 4.) |> equal (Some 1.)
+    xs |> Array.tryFindBack ((>) 4.) |> equal (Some 3.)
+
+[<Test>]
+let ``Array.tryFindIndexBack works``() =
+    let xs = [|1.; 2.; 3.; 4.|]
+    xs |> Array.tryFindIndex ((>) 4.) |> equal (Some 0)
+    xs |> Array.tryFindIndexBack ((>) 4.) |> equal (Some 2)    
 
 [<Test>]
 let ``Array.fold works``() =   
@@ -350,6 +473,15 @@ let ``Array.pick works``() =
     |> equal 2.
 
 [<Test>]
+let ``Array.range works``() =
+    [|1..5|]
+    |> Array.reduce (+)
+    |> equal 15
+    [|0..2..9|]
+    |> Array.reduce (+)
+    |> equal 20
+
+[<Test>]
 let ``Array.reduce works``() =   
     let xs = [|1.; 2.; 3.; 4.|]
     xs |> Array.reduce (-)
@@ -527,3 +659,60 @@ let ``Array as IList Seq.length has same behaviour``() =
     let xs = [|1.; 2.; 3.|]
     let ys = xs :> _ IList
     ys |> Seq.length |> equal 3
+
+[<Test>]
+let ``Mapping with typed arrays doesn't coerce``() =
+    let data = [| 1 .. 12 |]
+    let page size page data =
+        data
+        |> Array.skip ((page-1) * size)
+        |> Array.take size
+    let test1 =
+        [| 1..4 |]
+        |> Array.map (fun x -> page 3 x data)
+    let test2 =
+        [| 1..4 |]
+        |> Seq.map (fun x -> page 3 x data)
+        |> Array.ofSeq
+    test1 |> Array.concat |> Array.sum |> equal 78
+    test2 |> Array.concat |> Array.sum |> equal 78
+
+[<Test>]
+let ``Array.item works``() =
+    let xs = [|1.; 2.; 3.; 4.|]
+    Array.item 2 xs |> equal 3.
+
+[<Test>]
+let ``Array.tryItem works``() =
+    let xs = [|1.; 2.; 3.; 4.|]
+    Array.tryItem 3 xs |> equal (Some 4.)
+    Array.tryItem 4 xs |> equal None
+    Array.tryItem -1 xs |> equal None
+
+[<Test>]
+let ``Array.head works``() =
+    let xs = [|1.; 2.; 3.; 4.|]
+    Array.head xs |> equal 1.
+
+[<Test>]
+let ``Array.tryHead works``() =
+    let xs = [|1.; 2.; 3.; 4.|]
+    Array.tryHead xs |> equal (Some 1.)
+    Array.tryHead [||] |> equal None
+
+[<Test>]
+let ``Array.last works``() =
+    let xs = [|1.; 2.; 3.; 4.|]
+    xs |> Array.last
+    |> equal 4.
+    
+[<Test>]
+let ``Array.tryLast works``() =
+    let xs = [|1.; 2.; 3.; 4.|]
+    Array.tryLast xs |> equal (Some 4.)
+    Array.tryLast [||] |> equal None
+
+[<Test>]
+let ``Array.tail works``() =
+    let xs = [|1.; 2.; 3.; 4.|]
+    Array.tail xs |> Array.length |> equal 3

@@ -5,7 +5,7 @@
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
     <ProjectGuid>{486D9B44-99FB-436F-9F5D-0F685453E14C}</ProjectGuid>
-    <OutputType>Exe</OutputType>
+    <OutputType>Library</OutputType>
     <RootNamespace>Fable</RootNamespace>
     <AssemblyName>Fable</AssemblyName>
     <TargetFrameworkVersion>v4.5</TargetFrameworkVersion>
@@ -17,11 +17,13 @@
     <DebugSymbols>true</DebugSymbols>
     <Optimize>false</Optimize>
     <Tailcalls>false</Tailcalls>
-    <OutputPath>bin\Debug</OutputPath>
+    <OutputPath>..\..\build\fable\bin</OutputPath>
     <DefineConstants>DEBUG;TRACE</DefineConstants>
     <WarningLevel>3</WarningLevel>
     <PlatformTarget>AnyCPU</PlatformTarget>
     <Prefer32Bit>true</Prefer32Bit>
+    <StartArguments>--projFile src/tests/Other/Fable.Tests.Clamp.fsproj --clamp true</StartArguments>
+    <StartWorkingDirectory>..\..\..</StartWorkingDirectory>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
     <DebugType>pdbonly</DebugType>
@@ -45,16 +47,22 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="Util.fs" />
-    <Compile Include="AST\AST.Common.fs" />
-    <Compile Include="AST\AST.Fable.fs" />
+    <Compile Include="Util\Util.fs" />
+    <Compile Include="AST\AST.Fable.Util.fs" />
     <Compile Include="AST\AST.Babel.fs" />
-    <Compile Include="Replacements.fs" />
+    <Compile Include="Replacements\CoreLibMethods.fs" />
+    <Compile Include="Replacements\Replacements.fs" />
     <Compile Include="FSharp2Fable.Util.fs" />
     <Compile Include="FSharp2Fable.fs" />
     <Compile Include="Fable2Babel.fs" />
-    <Compile Include="Main.fs" />
     <None Include="App.config" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../fable-ast/Fable.AST.fsproj">
+      <Name>Fable.AST</Name>
+      <Project>{35134aab-9112-49dd-81fe-ab6a49523df2}</Project>
+      <Private>False</Private>
+    </ProjectReference>
   </ItemGroup>
   <PropertyGroup>
     <MinimumVisualStudioVersion Condition="'$(MinimumVisualStudioVersion)' == ''">11</MinimumVisualStudioVersion>
@@ -89,28 +97,10 @@
         </Reference>
       </ItemGroup>
     </When>
-    <When Condition="$(TargetFrameworkIdentifier) == '.NETFramework' And ($(TargetFrameworkVersion) == 'v4.5' Or $(TargetFrameworkVersion) == 'v4.5.1' Or $(TargetFrameworkVersion) == 'v4.5.2' Or $(TargetFrameworkVersion) == 'v4.5.3' Or $(TargetFrameworkVersion) == 'v4.6' Or $(TargetFrameworkVersion) == 'v4.6.1')">
+    <When Condition="$(TargetFrameworkIdentifier) == '.NETFramework' And ($(TargetFrameworkVersion) == 'v4.5' Or $(TargetFrameworkVersion) == 'v4.5.1' Or $(TargetFrameworkVersion) == 'v4.5.2' Or $(TargetFrameworkVersion) == 'v4.5.3' Or $(TargetFrameworkVersion) == 'v4.6' Or $(TargetFrameworkVersion) == 'v4.6.1' Or $(TargetFrameworkVersion) == 'v4.6.2')">
       <ItemGroup>
         <Reference Include="FSharp.Compiler.Service">
           <HintPath>..\..\packages\FSharp.Compiler.Service\lib\net45\FSharp.Compiler.Service.dll</HintPath>
-          <Private>True</Private>
-          <Paket>True</Paket>
-        </Reference>
-      </ItemGroup>
-    </When>
-  </Choose>
-  <Choose>
-    <When Condition="$(TargetFrameworkIdentifier) == '.NETFramework' And ($(TargetFrameworkVersion) == 'v4.5' Or $(TargetFrameworkVersion) == 'v4.5.1' Or $(TargetFrameworkVersion) == 'v4.5.2' Or $(TargetFrameworkVersion) == 'v4.5.3' Or $(TargetFrameworkVersion) == 'v4.6' Or $(TargetFrameworkVersion) == 'v4.6.1')">
-      <PropertyGroup>
-        <__paket__FSharp_Compiler_Service_ProjectCracker_targets>net45\FSharp.Compiler.Service.ProjectCracker</__paket__FSharp_Compiler_Service_ProjectCracker_targets>
-      </PropertyGroup>
-    </When>
-  </Choose>
-  <Choose>
-    <When Condition="$(TargetFrameworkIdentifier) == '.NETFramework' And ($(TargetFrameworkVersion) == 'v4.5' Or $(TargetFrameworkVersion) == 'v4.5.1' Or $(TargetFrameworkVersion) == 'v4.5.2' Or $(TargetFrameworkVersion) == 'v4.5.3' Or $(TargetFrameworkVersion) == 'v4.6' Or $(TargetFrameworkVersion) == 'v4.6.1')">
-      <ItemGroup>
-        <Reference Include="FSharp.Compiler.Service.ProjectCracker">
-          <HintPath>..\..\packages\FSharp.Compiler.Service.ProjectCracker\lib\net45\FSharp.Compiler.Service.ProjectCracker.dll</HintPath>
           <Private>True</Private>
           <Paket>True</Paket>
         </Reference>
@@ -145,7 +135,7 @@
         </Reference>
       </ItemGroup>
     </When>
-    <When Condition="$(TargetFrameworkIdentifier) == '.NETFramework' And ($(TargetFrameworkVersion) == 'v4.5' Or $(TargetFrameworkVersion) == 'v4.5.1' Or $(TargetFrameworkVersion) == 'v4.5.2' Or $(TargetFrameworkVersion) == 'v4.5.3' Or $(TargetFrameworkVersion) == 'v4.6' Or $(TargetFrameworkVersion) == 'v4.6.1')">
+    <When Condition="$(TargetFrameworkIdentifier) == '.NETFramework' And ($(TargetFrameworkVersion) == 'v4.5' Or $(TargetFrameworkVersion) == 'v4.5.1' Or $(TargetFrameworkVersion) == 'v4.5.2' Or $(TargetFrameworkVersion) == 'v4.5.3' Or $(TargetFrameworkVersion) == 'v4.6' Or $(TargetFrameworkVersion) == 'v4.6.1' Or $(TargetFrameworkVersion) == 'v4.6.2')">
       <ItemGroup>
         <Reference Include="Newtonsoft.Json">
           <HintPath>..\..\packages\Newtonsoft.Json\lib\net45\Newtonsoft.Json.dll</HintPath>
@@ -173,5 +163,4 @@
       </ItemGroup>
     </When>
   </Choose>
-  <Import Project="..\..\packages\FSharp.Compiler.Service.ProjectCracker\build\$(__paket__FSharp_Compiler_Service_ProjectCracker_targets).targets" Condition="Exists('..\..\packages\FSharp.Compiler.Service.ProjectCracker\build\$(__paket__FSharp_Compiler_Service_ProjectCracker_targets).targets')" Label="Paket" />
 </Project>

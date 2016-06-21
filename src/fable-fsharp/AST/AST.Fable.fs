@@ -1,4 +1,5 @@
 namespace Fable.AST.Fable
+open Fable
 open Fable.AST
 
 (** ##Decorators *)
@@ -10,7 +11,8 @@ type Decorator =
 
 (** ##Types *)
 type PrimitiveTypeKind =
-    | Unit // unit, null, undefined (non-strict equality)
+    | Unit
+    | Enum of fullName: string
     | Number of NumberKind
     | String
     | Regex
@@ -56,18 +58,18 @@ and Entity(kind, file, fullName, interfaces, decorators, isPublic) =
         List.exists ((=) fullName) interfaces
     member x.TryGetDecorator decorator =
         decorators |> List.tryFind (fun x -> x.Name = decorator)
-    static member CreateRootModule fileName =
-        Entity (Module, Some fileName, "", [], [], true)
+    static member CreateRootModule fileName modFullName =
+        Entity (Module, Some fileName, modFullName, [], [], true)
     override x.ToString() = sprintf "%s %A" x.Name kind
 
 and Declaration =
     | ActionDeclaration of Expr * SourceLocation
-    | EntityDeclaration of Entity * Declaration list * SourceLocation
+    | EntityDeclaration of Entity * privateName: string * Declaration list * SourceLocation
     | MemberDeclaration of Member
     member x.Range =
         match x with
         | ActionDeclaration (_,r) -> r
-        | EntityDeclaration (_,_,r) -> r
+        | EntityDeclaration (_,_,_,r) -> r
         | MemberDeclaration m -> m.Range
 
 and MemberKind =
@@ -76,41 +78,54 @@ and MemberKind =
     | Getter of name: string * isField: bool
     | Setter of name: string
 
-and Member(kind, range, args, body, ?decorators, ?isPublic, ?isStatic, ?hasRestParams) =
+and Member(kind, range, args, body, ?decorators, ?isPublic, ?isMutable, ?isStatic, ?hasRestParams, ?privateName) =
     member x.Kind: MemberKind = kind
     member x.Range: SourceLocation = range
     member x.Arguments: Ident list = args
     member x.Body: Expr = body
     member x.Decorators: Decorator list = defaultArg decorators []
     member x.IsPublic: bool = defaultArg isPublic true
+    member x.IsMutable: bool = defaultArg isMutable false
     member x.IsStatic: bool = defaultArg isStatic false
     member x.HasRestParams: bool = defaultArg hasRestParams false
+    /// Module members are also declared as variables, so they need
+    /// a private name that doesn't conflict with enclosing scope (see #130)
+    member x.PrivateName: string option = privateName
     member x.TryGetDecorator decorator =
         x.Decorators |> List.tryFind (fun x -> x.Name = decorator)
     override x.ToString() = sprintf "%A" kind
-        
+
 and ExternalEntity =
     | ImportModule of fullName: string * moduleName: string * isNs: bool
     | GlobalModule of fullName: string
     member x.FullName =
         match x with ImportModule (fullName, _, _)
                    | GlobalModule fullName -> fullName
-    
-and File(fileName, root, decls) =
+
+and File(fileName, root, decls, ?logs) =
     member x.FileName: string = fileName
     member x.Root: Entity = root
     member x.Declarations: Declaration list = decls
+    member x.Logs: LogMessage list = defaultArg logs []
     member x.Range =
         match decls with
         | [] -> SourceLocation.Empty
         | decls -> SourceLocation.Empty + (List.last decls).Range
-    
+
+and Project(projectFile, fileMap, ?assemblyFile, ?importPath) =
+    member __.ProjectFileName: string = projectFile
+    member __.FileMap: Map<string, string> = fileMap
+    member __.AssemblyFileName: string option = assemblyFile
+    member __.ImportPath: string option = importPath
+    member __.Name: string = System.IO.Path.GetFileNameWithoutExtension projectFile
+
 (** ##Expressions *)
 and ArrayKind = TypedArray of NumberKind | DynamicArray | Tuple
 
 and ApplyInfo = {
         methodName: string
         ownerFullName: string
+        methodKind: MemberKind
         callee: Expr option
         args: Expr list
         returnType: Type
@@ -118,15 +133,16 @@ and ApplyInfo = {
         decorators: Decorator list
         calleeTypeArgs: Type list
         methodTypeArgs: Type list
+        /// If the method accepts a lambda as first argument, indicates its arity 
+        lambdaArgArity: int
     }
-    
+
 and ApplyKind =
     | ApplyMeth | ApplyGet | ApplyCons
-    
+
 and ArrayConsKind =
     | ArrayValues of Expr list
     | ArrayAlloc of Expr
-    | ArrayConversion of Expr
 
 and Ident = { name: string; typ: Type }
 
@@ -137,7 +153,7 @@ and ValueKind =
     | Spread of Expr
     | TypeRef of Entity
     | IdentValue of Ident
-    | ImportRef of import: string * asDefault: bool * prop: string option
+    | ImportRef of memb: string * path: string
     | NumberConst of U2<int,float> * NumberKind
     | StringConst of string
     | BoolConst of bool
@@ -150,7 +166,7 @@ and ValueKind =
     | Emit of string
     member x.Type =
         match x with
-        | Null -> PrimitiveType Unit
+        | Null -> UnknownType
         | Spread x -> x.Type
         | IdentValue {typ=typ} -> typ
         | This | Super | ImportRef _ | TypeRef _ | Emit _ -> UnknownType
@@ -166,60 +182,62 @@ and ValueKind =
         match x with
         | Lambda (_, body) -> body.Range
         | _ -> None
-    
+
 and LoopKind =
     | While of guard: Expr * body: Expr
     | For of ident: Ident * start: Expr * limit: Expr * body: Expr * isUp: bool
     | ForOf of ident: Ident * enumerable: Expr * body: Expr
-    
+
 and Expr =
     // Pure Expressions
     | Value of value: ValueKind
-    | ObjExpr of members: Member list * interfaces: string list * range: SourceLocation option
+    | ObjExpr of members: Member list * interfaces: string list * baseClass: Expr option * range: SourceLocation option
     | IfThenElse of guardExpr: Expr * thenExpr: Expr * elseExpr: Expr * range: SourceLocation option
     | Apply of callee: Expr * args: Expr list * kind: ApplyKind * typ: Type * range: SourceLocation option
+    | Quote of Expr
 
     // Pseudo-Statements
     | Throw of Expr * range: SourceLocation option
+    | DebugBreak of range: SourceLocation option
     | Loop of LoopKind * range: SourceLocation option
     | VarDeclaration of var: Ident * value: Expr * isMutable: bool
     | Set of callee: Expr * property: Expr option * value: Expr * range: SourceLocation option
     | Sequential of Expr list * range: SourceLocation option
     | TryCatch of body: Expr * catch: (Ident * Expr) option * finalizer: Expr option * range: SourceLocation option
 
-    // This is mainly to hide the type of ignored expressions so they don't trigger
-    // a return in functions, but they'll be erased in compiled code
+    // This wraps expressions with a different type for compile-time checkings
+    // E.g. enums, ignored expressions so they don't trigger a return in functions
     | Wrapped of Expr * Type
 
     member x.Type =
         match x with
-        | Value kind -> kind.Type 
+        | Value kind -> kind.Type
         | ObjExpr _ -> UnknownType
         | Wrapped (_,typ) | Apply (_,_,_,typ,_) -> typ
         | IfThenElse (_,thenExpr,_,_) -> thenExpr.Type
-        | Throw _ | Loop _ | Set _ | VarDeclaration _ -> PrimitiveType Unit
+        | Throw _ | DebugBreak _ | Loop _ | Set _ | VarDeclaration _ -> PrimitiveType Unit
         | Sequential (exprs,_) ->
             match exprs with
             | [] -> PrimitiveType Unit
             | exprs -> (Seq.last exprs).Type
-        | TryCatch (body,_,finalizer,_) ->
-            match finalizer with
-            | Some _ -> PrimitiveType Unit
-            | None -> body.Type
-            
+        | TryCatch (body,_,_,_) -> body.Type
+        // TODO: Quotations must have their own primitive? type
+        | Quote _ -> UnknownType
+
     member x.Range: SourceLocation option =
         match x with
         | Value v -> v.Range
-        | VarDeclaration (_,e,_) | Wrapped (e,_) -> e.Range
-        | ObjExpr (_,_,range) 
+        | VarDeclaration (_,e,_) | Wrapped (e,_) | Quote e -> e.Range
+        | ObjExpr (_,_,_,range)
         | Apply (_,_,_,_,range)
         | IfThenElse (_,_,_,range)
         | Throw (_,range)
+        | DebugBreak range
         | Loop (_,range)
         | Set (_,_,_,range)
         | Sequential (_,range)
         | TryCatch (_,_,_,range) -> range
-            
+
     // member x.Children: Expr list =
     //     match x with
     //     | Value _ -> []
@@ -240,29 +258,32 @@ and Expr =
     //         | None -> [callee; value]
     //     | VarDeclaration (_,value,_) -> [value]
     //     | Sequential (exprs,_) -> exprs
-    //     | Wrapped (e,_) -> [e]    
+    //     | Wrapped (e,_) -> [e]
     //     | TryCatch (body,catch,finalizer,_) ->
     //         match catch, finalizer with
     //         | Some (_,catch), Some finalizer -> [body; catch; finalizer]
     //         | Some (_,catch), None -> [body; catch]
     //         | None, Some finalizer -> [body; finalizer]
     //         | None, None -> [body]
-    
+
 module Util =
     open Fable
     
+    let attachRange (range: SourceLocation option) msg =
+        match range with
+        | Some range -> msg + " " + (string range)
+        | None -> msg
+
     type CallKind =
         | InstanceCall of callee: Expr * meth: string * args: Expr list
-        | ImportCall of importRef: string * asDefault: bool * modName: string option * meth: string option * isCons: bool * args: Expr list
+        | ImportCall of importPath: string * modName: string * meth: string option * isCons: bool * args: Expr list
         | CoreLibCall of modName: string * meth: string option * isCons: bool * args: Expr list
         | GlobalCall of modName: string * meth: string option * isCons: bool * args: Expr list
 
     let makeLoop range loopKind = Loop (loopKind, range)
-    let makeCoreRef com modname =
-        Value (ImportRef (Naming.getCoreLibPath com, false, Some modname))
-    
+    let makeCoreRef (com: ICompiler) modname = Value (ImportRef (modname, com.Options.coreLib))
     let makeIdent name: Ident = {name=name; typ=UnknownType}
-    let makeIdentExpr name = makeIdent name |> IdentValue |> Value 
+    let makeIdentExpr name = makeIdent name |> IdentValue |> Value
 
     let makeBinOp, makeUnOp, makeLogOp, makeEqOp =
         let makeOp range typ args op =
@@ -281,9 +302,9 @@ module Util =
             | Value Null, _ -> makeSequential range rest
             | _, [Sequential (statements, _)] -> makeSequential range (first::statements)
             // Calls to System.Object..ctor in class constructors
-            | ObjExpr ([],[],_), _ -> makeSequential range rest
+            | ObjExpr ([],[],_,_), _ -> makeSequential range rest
             | _ -> Sequential (statements, range)
-                
+
     let makeConst (value: obj) =
         match value with
         | :? bool as x -> BoolConst x
@@ -291,7 +312,7 @@ module Util =
         | :? char as x -> StringConst (string x)
         // Integer types
         | :? int as x -> NumberConst (U2.Case1 x, Int32)
-        | :? byte as x -> NumberConst (U2.Case1 (int x), UInt8Clamped)
+        | :? byte as x -> NumberConst (U2.Case1 (int x), UInt8)
         | :? sbyte as x -> NumberConst (U2.Case1 (int x), Int8)
         | :? int16 as x -> NumberConst (U2.Case1 (int x), Int16)
         | :? uint16 as x -> NumberConst (U2.Case1 (int x), UInt16)
@@ -305,20 +326,20 @@ module Util =
         | :? unit | _ when value = null -> Null
         | _ -> failwithf "Unexpected literal %O" value
         |> Value
-        
+
     let makeFnType args =
         PrimitiveType (List.length args |> Function)
-    
+
     let makeGet range typ callee propExpr =
         Apply (callee, [propExpr], ApplyGet, typ, range)
-        
-    let makeArray typ argExprs =
+
+    let makeArray elementType arrExprs =
         let arrayKind =
-            match typ with
+            match elementType with
             | PrimitiveType (Number numberKind) -> TypedArray numberKind
             | _ -> DynamicArray
-        ArrayConst(ArrayValues argExprs, arrayKind) |> Value
-        
+        ArrayConst(ArrayValues arrExprs, arrayKind) |> Value
+
     let tryImported com name (decs: #seq<Decorator>) =
         decs |> Seq.tryPick (fun x ->
             match x.Name with
@@ -326,28 +347,20 @@ module Util =
                 makeIdent name |> IdentValue |> Value |> Some
             | "Import" ->
                 match x.Arguments with
-                | (:? string as path)::_ ->
-                    let path, asDefault, prop =
-                        let path, args = Naming.getQueryParams path
-                        let asDefault = args.TryFind("asDefault") = Some("true")
-                        let prop = args.TryFind("get")
-                        match args.TryFind("fromLib") with
-                        | Some "true" -> Naming.fromLib com path, asDefault, prop
-                        | _ -> path, asDefault, prop
-                    ImportRef(path, asDefault, prop) |> Value |> Some
-                | _ -> failwith "Import attributes must have a single non-empty string argument"
+                | [(:? string as memb);(:? string as path)] ->
+                    ImportRef(memb, path) |> Value |> Some
+                | _ -> failwith "Import attributes must contain two string arguments"
             | _ -> None)
 
-    // TODO: Pass range information to display it on the exception here?
-    let makeTypeRef com range typ =
+    let makeTypeRef com (range: SourceLocation option) typ =
         match typ with
         | PrimitiveType _ ->
-            failwithf "Cannot reference a primitive type: %A" range
+            "Cannot reference a primitive type"
+            |> attachRange range |> failwith
         | UnknownType ->
-            failwithf "%s %s: %A"
-                "Cannot reference unknown type."
-                "If this a generic argument, try to make function inline"
-                range
+            "Cannot reference unknown type. "
+            + "If this a generic argument, try to make function inline."
+            |> attachRange range |> failwith
         | DeclaredType ent ->
             match tryImported com ent.Name ent.Decorators with
             | Some expr -> expr
@@ -369,8 +382,8 @@ module Util =
             let fnTyp = PrimitiveType (List.length args |> Function)
             Apply (callee, [makeConst meth], ApplyGet, fnTyp, None)
             |> apply ApplyMeth args
-        | ImportCall (importRef, asDefault, modOption, meth, isCons, args) ->
-            Value (ImportRef (importRef, asDefault, modOption))
+        | ImportCall (importPath, modName, meth, isCons, args) ->
+            Value (ImportRef (modName, importPath))
             |> getCallee meth args
             |> apply (getKind isCons) args
         | CoreLibCall (modName, meth, isCons, args) ->
@@ -381,7 +394,7 @@ module Util =
             makeIdentExpr modName
             |> getCallee meth args
             |> apply (getKind isCons) args
-            
+
     let makeTypeTest com range (typ: Type) expr =
         let stringType, boolType =
             PrimitiveType String, PrimitiveType Boolean
@@ -402,58 +415,63 @@ module Util =
             match typEnt.Kind with
             | Interface ->
                 CoreLibCall ("Util", Some "hasInterface", false, [expr; makeConst typEnt.FullName])
-                |> makeCall com range boolType 
+                |> makeCall com range boolType
             | _ ->
-                makeBinOp range boolType [expr; makeTypeRef com range typ] BinaryInstanceOf 
-        | _ -> failwithf "Unsupported type test in %A: %A" range typ
+                makeBinOp range boolType [expr; makeTypeRef com range typ] BinaryInstanceOf
+        | _ -> "Unsupported type test: " + typ.FullName
+               |> attachRange range |> failwith
 
-    let makeUnionCons range =
-        let args: Ident list = [makeIdent "t"; makeIdent "d"]
-        let emit = Emit "this.tag=t;this.data=d;" |> Value
-        let body = Apply (emit, [], ApplyMeth, PrimitiveType Unit, Some range)
-        Member(Constructor, range, args, body, [], true, false, false)
-        |> MemberDeclaration
-        
-    let makeExceptionCons range =
-        let emit = Emit "for (var i=0; i<arguments.length; i++) { this['Data'+i]=arguments[i]; }" |> Value
-        let body = Apply (emit, [], ApplyMeth, PrimitiveType Unit, Some range)
-        Member(Constructor, range, [], body, [], true, false, false)
+    let makeUnionCons () =
+        let emit = Emit "this.Case=arguments[0]; this.Fields = []; for (var i=1; i<arguments.length; i++) { this.Fields[(i-1)]=arguments[i]; }" |> Value
+        let body = Apply (emit, [], ApplyMeth, PrimitiveType Unit, None)
+        Member(Constructor, SourceLocation.Empty, [], body, [], true)
         |> MemberDeclaration
 
-    let makeRecordCons range props =
+    let makeExceptionCons () =
+        let emit = Emit "for (var i=0; i<arguments.length; i++) { this['data'+i]=arguments[i]; }" |> Value
+        let body = Apply (emit, [], ApplyMeth, PrimitiveType Unit, None)
+        Member(Constructor, SourceLocation.Empty, [], body, [], true)
+        |> MemberDeclaration
+
+    let makeRecordCons props =
         let sanitizeField x =
-            if Naming.identForbiddenChars.IsMatch x
+            if Naming.identForbiddenCharsRegex.IsMatch x
             then "['" + (x.Replace("'", "\\'")) + "']"
             else "." + x
         let args, body =
             props |> List.mapi (fun i _ -> sprintf "$arg%i" i |> makeIdent),
             props |> Seq.mapi (fun i x ->
                 sprintf "this%s=$arg%i" (sanitizeField x) i) |> String.concat ";"
-        let body = Apply (Value (Emit body), [], ApplyMeth, PrimitiveType Unit, Some range)
-        Member(Constructor, range, args, body, [], true, false, false)
+        let body = Apply (Value (Emit body), [], ApplyMeth, PrimitiveType Unit, None)
+        Member(Constructor, SourceLocation.Empty, args, body, [], true, false, false)
         |> MemberDeclaration
-        
-    let makeDelegate (expr: Expr) =
-        let rec flattenLambda accArgs = function
-            | Value (Lambda (args, body)) ->
-                flattenLambda (accArgs@args) body
+
+    let makeDelegate arity (expr: Expr) =
+        let rec flattenLambda (arity: int option) accArgs = function
+            | Value (Lambda (args, body)) when arity.IsNone || List.length accArgs < arity.Value ->
+                flattenLambda arity (accArgs@args) body
             | _ as body ->
                 Value (Lambda (accArgs, body))
         match expr, expr.Type with
         | Value (Lambda (args, body)), _ ->
-            flattenLambda args body
-        | _, PrimitiveType (Function arity) when arity > 1 ->
-            let lambdaArgs =
-                [1..arity] |> List.map (fun i -> {name=sprintf "$arg%i" i; typ=UnknownType}) 
-            let lambdaBody = 
-                (expr, lambdaArgs)
-                ||> List.fold (fun callee arg ->
-                    Apply (callee, [Value (IdentValue arg)], ApplyMeth, UnknownType, expr.Range))
-            Lambda (lambdaArgs, lambdaBody) |> Value
-        | _ ->
-            expr // Do nothing
-            
-    // Check if we're applying agains a F# let binding
+            flattenLambda arity args body
+        | _, PrimitiveType (Function a) ->
+            let arity = defaultArg arity a
+            if arity > 1 then
+                let lambdaArgs =
+                    [for i=1 to arity do
+                        yield {name=Naming.getUniqueVar(); typ=UnknownType}]
+                let lambdaBody =
+                    (expr, lambdaArgs)
+                    ||> List.fold (fun callee arg ->
+                        Apply (callee, [Value (IdentValue arg)],
+                            ApplyMeth, UnknownType, expr.Range))
+                Lambda (lambdaArgs, lambdaBody) |> Value
+            else
+                expr // Do nothing
+        | _ -> expr
+
+    // Check if we're applying against a F# let binding
     let makeApply range typ callee exprs =
         let lasti = (List.length exprs) - 1
         ((0, callee), exprs)
@@ -467,9 +485,19 @@ module Util =
                 | _ -> callee
             i, Apply (callee, [expr], ApplyMeth, typ, range))
         |> snd
-        
+
     let makeJsObject range (props: (string * Expr) list) =
         let members = props |> List.map (fun (name, body) ->
             Member(Getter (name, true), range, [], body))
-        ObjExpr(members, [], Some range)
- 
+        ObjExpr(members, [], None, Some range)
+        
+    let getTypedArrayName (com: ICompiler) numberKind =
+        match numberKind with
+        | Int8 -> "Int8Array"
+        | UInt8 -> if com.Options.clamp then "Uint8ClampedArray" else "Uint8Array"
+        | Int16 -> "Int16Array"
+        | UInt16 -> "Uint16Array"
+        | Int32 -> "Int32Array"
+        | UInt32 -> "Uint32Array"
+        | Float32 -> "Float32Array"
+        | Float64 -> "Float64Array"

@@ -2,6 +2,7 @@
 module Fable.Tests.UnionTypes
 open NUnit.Framework
 open Fable.Tests.Util
+open Fable.Core
 
 type Gender = Male | Female
 
@@ -81,3 +82,73 @@ let ``Union cases called Tag still work (bug due to Tag field)``() =
     | Tag x -> x
     | _ -> failwith "unexpected"
     |> equal "abc"
+
+#if MOCHA
+type JsonTypeInner = {
+    Prop1: string
+    Prop2: int
+}
+
+type JsonTestUnion =
+    | IntType of int
+    | StringType of string
+    | TupleType of string * int
+    | ObjectType of JsonTypeInner
+
+[<Emit("JSON.parse($0)")>]
+let jsonParse (json: string) = failwith "JS Only"
+
+[<Emit("JSON.stringify($0)")>]
+let jsonStringify (json): string = failwith "JS Only"
+
+[<Test>]
+let ``Pattern matching json parse union cases still works``() =
+    // Test IntType
+    match jsonParse """{"Case":"IntType","Fields":[1]}""" with
+    | IntType x -> x
+    | _ -> failwith "unexpected"
+    |> equal 1
+    // Test StringType
+    match jsonParse """{"Case":"StringType","Fields":["value1"]}""" with
+    | StringType x -> x
+    | _ -> failwith "unexpected"
+    |> equal "value1"
+    // Test TupleType
+    match jsonParse """{"Case":"TupleType","Fields":["value1",2]}""" with
+    | TupleType(x, y) -> x, y
+    | _ -> failwith "unexpected"
+    |> fun (x, y) ->
+        x |> equal "value1"
+        y |> equal 2
+    // Test ObjectType
+    match jsonParse """{"Case":"ObjectType","Fields":[{"Prop1":"value1","Prop2":2}]}""" with
+    | ObjectType(x) -> x
+    | _ -> failwith "unexpected"
+    |> fun x ->
+        x.Prop1 |> equal "value1"
+        x.Prop2 |> equal 2
+
+[<Test>]
+let ``Union cases json stringify is as we expect``() =
+    ObjectType({Prop1 = "value1"; Prop2 = 2})
+    |> jsonStringify
+    |> equal """{"Case":"ObjectType","Fields":[{"Prop1":"value1","Prop2":2}]}"""
+#endif
+
+[<Test>]
+let ``Option.isSome/isNone works``() =
+    let o1 = None
+    let o2 = Some 5
+    Option.isNone o1 |> equal true
+    Option.isSome o1 |> equal false
+    Option.isNone o2 |> equal false
+    Option.isSome o2 |> equal true
+
+[<Test>]
+let ``Option.IsSome/IsNone works``() =
+    let o1 = None
+    let o2 = Some 5
+    o1.IsNone |> equal true
+    o1.IsSome |> equal false
+    o2.IsNone |> equal false
+    o2.IsSome |> equal true

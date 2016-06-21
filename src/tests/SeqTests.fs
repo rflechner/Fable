@@ -109,6 +109,30 @@ let ``Seq.findIndex works``() =
     let xs = [1.; 2.; 3.; 4.]
     xs |> Seq.findIndex ((=) 2.)
     |> equal 1
+
+[<Test>]
+let ``Seq.findBack works``() =
+    let xs = [1.; 2.; 3.; 4.]
+    xs |> Seq.find ((>) 4.) |> equal 1.
+    xs |> Seq.findBack ((>) 4.) |> equal 3.
+
+[<Test>]
+let ``Seq.findIndexBack works``() =
+    let xs = [1.; 2.; 3.; 4.]
+    xs |> Seq.findIndex ((>) 4.) |> equal 0
+    xs |> Seq.findIndexBack ((>) 4.) |> equal 2
+
+[<Test>]
+let ``Seq.tryFindBack works``() =
+    let xs = [1.; 2.; 3.; 4.]
+    xs |> Seq.tryFind ((>) 4.) |> equal (Some 1.)
+    xs |> Seq.tryFindBack ((>) 4.) |> equal (Some 3.)
+
+[<Test>]
+let ``Seq.tryFindIndexBack works``() =
+    let xs = [1.; 2.; 3.; 4.]
+    xs |> Seq.tryFindIndex ((>) 4.) |> equal (Some 0)
+    xs |> Seq.tryFindIndexBack ((>) 4.) |> equal (Some 2)
     
 [<Test>]
 let ``Seq.fold works``() =
@@ -134,6 +158,17 @@ let ``Seq.head works``() =
     let xs = [1.; 2.; 3.; 4.]
     Seq.head xs
     |> equal 1.
+
+[<Test>]
+let ``Seq.tryHead works``() =
+    let xs = [1.; 2.; 3.; 4.]
+    Seq.tryHead xs |> equal (Some 1.)
+    Seq.tryHead [] |> equal None
+
+[<Test>]
+let ``Seq.tail works``() =
+    let xs = [1.; 2.; 3.; 4.]
+    Seq.tail xs |> Seq.length |> equal 3
 
 [<Test>]
 let ``Seq.init works``() =
@@ -225,6 +260,13 @@ let ``Seq.item works``() =
     let xs = [1.; 2.]
     Seq.item 1 xs
     |> equal 2.
+    
+[<Test>]
+let ``Seq.tryItem works``() =
+    let xs = [1.; 2.; 3.; 4.]
+    Seq.tryItem 3 xs |> equal (Some 4.)
+    Seq.tryItem 4 xs |> equal None
+    Seq.tryItem -1 xs |> equal None    
 
 [<Test>]
 let ``Seq.ofArray works``() =
@@ -248,6 +290,37 @@ let ``Seq.pick works``() =
        | 2. -> Some x
        | _ -> None)
     |> equal 2.
+
+[<Test>]
+let ``Seq.range works``() =
+    seq{1..5}
+    |> Seq.reduce (+)
+    |> equal 15
+
+    seq{0..2..9}
+    |> Seq.reduce (+)
+    |> equal 20
+
+    seq{1. .. 5.}
+    |> Seq.reduce (+)
+    |> equal 15.
+
+    seq{0. .. 2. .. 9.}
+    |> Seq.reduce (+)
+    |> equal 20.
+    
+    seq{9 .. -2 .. 0}
+    |> Seq.reduce (+)
+    |> equal 25
+
+    seq{'a' .. 'f'}
+    |> Seq.toArray
+    |> System.String
+    |> equal "abcdef"
+    
+    seq{'z' .. 'a'}
+    |> Seq.length
+    |> equal 0
 
 [<Test>]
 let ``Seq.reduce works``() =
@@ -293,6 +366,18 @@ let ``Seq.skip works``() =
     let ys = xs |> Seq.skip 1
     ys |> Seq.head
     |> equal 2.
+
+[<Test>]
+let ``Seq.skip fails when there're not enough elements``() =
+    let error, xs = ref false, [|1;2;3;4;5|]
+    try
+        Seq.skip 5 xs |> Seq.length |> equal 0
+    with _ -> error := true
+    equal false !error
+    try
+        Seq.skip 6 xs |> Seq.length |> equal 0
+    with _ -> error := true
+    equal true !error
 
 [<Test>]
 let ``Seq.toArray works``() =
@@ -429,6 +514,12 @@ let ``Seq.last works``() =
     let xs = [1.; 2.; 3.; 4.]
     xs |> Seq.last
     |> equal 4.
+    
+[<Test>]
+let ``Seq.tryLast works``() =
+    let xs = [1.; 2.; 3.; 4.]
+    Seq.tryLast xs |> equal (Some 4.)
+    Seq.tryLast [] |> equal None
 
 [<Test>]
 let ``Seq.pairwise works``() =
@@ -464,6 +555,9 @@ let ``Seq.take works``() =
     xs |> Seq.take 2
     |> Seq.last
     |> equal 2.
+    // Seq.take should throw an exception if there're not enough elements 
+    try xs |> Seq.take 20 |> Seq.length with _ -> -1
+    |> equal -1
 
 [<Test>]
 let ``Seq.takeWhile works``() =
@@ -478,6 +572,9 @@ let ``Seq.truncate works``() =
     xs |> Seq.truncate 2
     |> Seq.last
     |> equal 2.
+    // Seq.truncate shouldn't throw an exception if there're not enough elements 
+    try xs |> Seq.truncate 20 |> Seq.length with _ -> -1
+    |> equal 5
 
 [<Test>]
 let ``Seq.where works``() =

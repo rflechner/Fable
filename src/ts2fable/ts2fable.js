@@ -1,14 +1,14 @@
-﻿#!/usr/bin/env node
-/* global process */
+#!/usr/bin/env node
 
-var ts = require("typescript");
 var fs = require("fs");
 var path = require("path");
+var ts = require("typescript");
 
 var templates = {
 file:
 `namespace Fable.Import
 open System
+open System.Text.RegularExpressions
 open Fable.Core
 open Fable.Import.JS
 
@@ -62,6 +62,7 @@ var reserved = [
     "mixin",
     "object",
     "parallel",
+    "params",
     "process",
     "protected",
     "pure",
@@ -152,16 +153,38 @@ var genReg = /<.+?>$/;
 var mappedTypes = {
   Date: "DateTime",
   Object: "obj",
-  Array: "ResizeArray"
+  Array: "ResizeArray",
+  RegExp: "Regex",
+  String: "string",
+  Number: "float"
 };
 
 function escape(x) {
+    // HACK: ignore strings with a comment (* ... *), tuples ( * )
+    // and union types arrays U2<string,float>[]
+    if (x.indexOf("(*") >= 0 || x.indexOf(" * ") >= 0 || /^U\d+<.*>$/.test(x)) {
+        return x;
+    }
     var genParams = genReg.exec(x);
     var name = x.replace(genReg,"")
     name = (keywords.indexOf(name) >= 0 || reserved.indexOf(name) >= 0 || /[^\w.']/.test(name))
         ? "``" + name + "``"
         : name;
     return name + (genParams ? genParams[0] : "");
+}
+
+function stringToUnionCase(str) {
+    function upperFirstLetter(str) {
+        return typeof str == "string" && str.length > 1
+            ? str[0].toUpperCase() + str.substr(1)
+            : str;
+    }
+    if (str.length == 0)
+        return `[<CompiledName("")>] EmptyString`;
+    else if (/^[A-Z]/.test(str))
+        return `[<CompiledName("${str}")>] ${escape(str)}`;
+    else
+        return escape(upperFirstLetter(str));
 }
 
 function append(template, txt) {
@@ -197,7 +220,7 @@ function printParameters(parameters, sep, def) {
     sep = sep || ", ", def = def || "";
     function printParameter(x) {
         if (x.rest) {
-            var execed = /ResizeArray<(.*?)>/.exec(escape(x.type));
+            var execed = /^ResizeArray<(.*?)>$/.exec(escape(x.type));
             var type = (execed == null ? "obj" : escape(execed[1])) + "[]";
             return "[<ParamArray>] " + escape(x.name) + ": " + type;
         }
@@ -328,19 +351,28 @@ function printImport(path, name) {
         var fullPath = joinPath(path, name.replace(genReg, ""));
         var period = fullPath.indexOf('.');
         var importPath = period >= 0
-            ? fullPath.substr(0, period) + "?get=" + fullPath.substr(period + 1)
-            : fullPath;
+            ? fullPath.substr(period + 1) + '","' + fullPath.substr(0, period) 
+            : '*","' + fullPath;
         return `[<Import("${importPath}")>] `;
     }
 }
 
 function printInterface(prefix) {
+    function printDecorator(ifc) {
+        switch (ifc.kind) {
+            case "class":
+                return printImport(ifc.path, ifc.name);
+            case "stringEnum":
+                return "[<StringEnum>] ";
+            default:
+                return "";
+        }    
+    }
     return function (ifc, i) {
         var template = prefix + templates.interface
             .replace("[TYPE_KEYWORD]", i === 0 ? "type" : "and")
             .replace("[NAME]", escape(ifc.name))
-            .replace("[DECORATOR]", ifc.kind === "class"
-                ? printImport(ifc.path, ifc.name) : "")
+            .replace("[DECORATOR]", printDecorator(ifc))
             .replace("[CONSTRUCTOR]", ifc.kind === "class"
                 ? "(" + printParameters(ifc.constructorParameters) + ")" : "");
                 
@@ -358,6 +390,9 @@ function printInterface(prefix) {
                                 .replace("[ID]", currentValue.value)
                     return prefix + cv;
                 }).join("\n");
+            case "stringEnum":
+                return template + prefix + prefix + "| " + ifc.properties.map(x =>
+                    stringToUnionCase(x.name)).join(" | ");
             case "class":
                 var classMembers = printClassMembers(prefix + "    ", ifc);
                 return template += (classMembers.length == 0 && !hasParents
@@ -437,6 +472,9 @@ function printTypeArguments(typeArgs) {
  }
 
 function getType(type) {
+    if (!type) {
+        return "obj";
+    }
     var typeParameters = findTypeParameters(type);
     switch (type.kind) {
         case ts.SyntaxKind.StringKeyword:
@@ -458,7 +496,12 @@ function getType(type) {
             cbParams = cbParams.length > 0 ? cbParams + ", " : "";
             return "Func<" + cbParams + getType(type.type) + ">";
         case ts.SyntaxKind.UnionType:
-            return "U" + type.types.length + printTypeArguments(type.types);
+            if (type.types && type.types[0].kind == ts.SyntaxKind.StringLiteralType)
+                return "(* TODO StringEnum " + type.types.map(x=>x.text).join(" | ") + " *) string";
+            else if (type.types.length <= 4)
+                return "U" + type.types.length + printTypeArguments(type.types);
+            else
+                return "obj";
         case ts.SyntaxKind.TupleType:
             return type.elementTypes.map(getType).join(" * ");
         case ts.SyntaxKind.ParenthesizedType:
@@ -510,6 +553,18 @@ function getProperty(node, opts) {
     };
 }
 
+function getStringEnum(node) {
+    return {
+        kind: "stringEnum",
+        name: getName(node),
+        properties: node.type.types.map(function (n) {
+            return { name : n.text }
+        }),
+        parents: [],
+        methods: []
+    }
+}
+
 function getEnum(node) {
     return {
         kind: "enum",
@@ -527,21 +582,33 @@ function getEnum(node) {
 
 // TODO: Check if it's const
 function getVariables(node) {
-    var variables = [];
+    var variables = [], anonymousTypes = [], name, type;
     var declarationList = Array.isArray(node.declarationList)
         ? node.declarationList : [node.declarationList];
     for (var i = 0; i < declarationList.length; i++) {
         var declarations = declarationList[i].declarations;
         for (var j = 0; j < declarations.length; j++) {
+            name = declarations[j].name.text;
+            if (declarations[j].type.kind == ts.SyntaxKind.TypeLiteral) {
+                type = visitInterface(declarations[j].type, { name: name + "Type", anonymous: true });
+                anonymousTypes.push(type);
+                type = type.name;                
+            }
+            else {
+                type = getType(declarations[j].type);
+            }
             variables.push({
-                name: declarations[j].name.text,
-                type: getType(declarations[j].type),
+                name: name,
+                type: type,
                 static: true,
                 parameters: []
             });
         }
     }
-    return variables;
+    return {
+        variables: variables,
+        anonymousTypes: anonymousTypes
+    };
 }
 
 function getParameter(param) {
@@ -560,7 +627,9 @@ function getMethod(node, opts) {
         name: opts.name || getName(node),
         type: getType(node.type),
         optional: node.questionToken != null,
-        static: opts.static || (node.name ? hasFlag(node.name.parserContextFlags, ts.NodeFlags.Static) : false),
+        static: opts.static
+            || (node.name && hasFlag(node.name.parserContextFlags, ts.NodeFlags.Static))
+            || (node.modifiers && hasFlag(node.modifiers.flags, ts.NodeFlags.Static)),
         parameters: node.parameters.map(getParameter)
     };
     var firstParam = node.parameters[0], secondParam = node.parameters[1];
@@ -588,14 +657,15 @@ function getInterface(node, opts) {
     }
     opts = opts || {};
     var ifc = {
-      name: getName(node) + printTypeParameters(node.typeParameters),
+      name: opts.name || (getName(node) + printTypeParameters(node.typeParameters)),
       kind: opts.kind || "interface",
       parents: opts.kind == "alias" ? [getType(node.type)] : getParents(node),
       properties: [],
       methods: [],
       path: opts.path
     };
-    typeCache[joinPath(ifc.path, ifc.name.replace(genReg,""))] = ifc;
+    if (!opts.anonymous)
+        typeCache[joinPath(ifc.path, ifc.name.replace(genReg,""))] = ifc;
     return ifc;
 }
 
@@ -616,8 +686,10 @@ function visitInterface(node, opts) {
                 }
                 ifc.properties.push(member);
                 break;
+            // TODO: If interface only contains one `Invoke` method
+            // make it an alias of Func
             case ts.SyntaxKind.CallSignature:
-                member = getMethod(node, { name: "callSelf" });
+                member = getMethod(node, { name: "Invoke" });
                 member.emit = "$0($1...)";
                 ifc.methods.push(member);
                 break;
@@ -636,7 +708,7 @@ function visitInterface(node, opts) {
                     ifc.methods.push(member);
                 break;
             case ts.SyntaxKind.ConstructSignature:
-                member = getMethod(node, { name: "createNew" });
+                member = getMethod(node, { name: "Create" });
                 member.emit = "new $0($1...)";
                 ifc.methods.push(member);
                 break;
@@ -673,11 +745,15 @@ function visitModule(node, opts) {
                 mod.interfaces.push(visitInterface(node, { kind: "class", path: modPath }));
                 break;
             case ts.SyntaxKind.TypeAliasDeclaration:
-                mod.interfaces.push(visitInterface(node, { kind: "alias", path: modPath }));
+                if (node.type.types && node.type.types[0].kind == ts.SyntaxKind.StringLiteralType)
+                    mod.interfaces.push(getStringEnum(node))
+                else
+                    mod.interfaces.push(visitInterface(node, { kind: "alias", path: modPath }));
                 break;
             case ts.SyntaxKind.VariableStatement:
-                getVariables(node).forEach(x =>
-                    mod.properties.push(x));
+                var varsAndTypes = getVariables(node);
+                varsAndTypes.variables.forEach(x => mod.properties.push(x));
+                varsAndTypes.anonymousTypes.forEach(x => mod.interfaces.push(x));
                 break;
             case ts.SyntaxKind.FunctionDeclaration:
                 mod.methods.push(getMethod(node, { static: true }));
@@ -698,8 +774,9 @@ function visitFile(node) {
     ts.forEachChild(node, function(node) {
         switch (node.kind) {
             case ts.SyntaxKind.VariableStatement:
-                getVariables(node).forEach(x =>
-                    properties.push(x));
+                var varsAndTypes = getVariables(node);
+                varsAndTypes.variables.forEach(x => properties.push(x));
+                varsAndTypes.anonymousTypes.forEach(x => interfaces.push(x));
                 break;
             case ts.SyntaxKind.FunctionDeclaration:
                 methods.push(getMethod(node, { static: true }));
@@ -725,10 +802,10 @@ function visitFile(node) {
                 }
                 break;
             case ts.SyntaxKind.TypeAliasDeclaration:
-                interfaces.push(visitInterface(node, { kind: "alias" }));
+                interfaces.push(visitInterface(node, { kind: "alias" }));
                 break;
             case ts.SyntaxKind.ClassDeclaration:
-				interfaces.push(visitInterface(node, { kind: "class" }));
+				interfaces.push(visitInterface(node, { kind: "class" }));
                 break;
         }
     });
@@ -741,6 +818,9 @@ function visitFile(node) {
 
 try {
     var filePath = process.argv[2];
+    if (filePath == null)
+        throw "Please provide the path to a TypeScript definition file";
+    
     // fileName = (fileName = path.basename(filePath).replace(".d.ts",""), fileName[0].toUpperCase() + fileName.substr(1));
     // `readonly` keyword is causing problems, remove it
     var code = fs.readFileSync(filePath).toString().replace(/readonly/g, "");
@@ -751,6 +831,6 @@ try {
     process.exit(0);
 }
 catch (err) {
-    console.log(err);
+    console.log("ERROR: " + err);
     process.exit(1);
 }

@@ -1,7 +1,9 @@
 # F# |> BABEL
 
-### The compiler that emits JavaScript you can be proud of. [Try it out!](http://fsprojects.github.io/Fable/repl.html)
-[![Mono Build Status](https://travis-ci.org/fsprojects/Fable.svg "Mono Build Status")](https://travis-ci.org/fsprojects/Fable) [![.NET Build Status](https://ci.appveyor.com/api/projects/status/vlmyxg64my74sik5?svg=true ".NET Build Status")](https://ci.appveyor.com/project/alfonsogarciacaro/fable)
+### The compiler that emits JavaScript you can be proud of!
+
+[![Mono Build Status](https://travis-ci.org/fsprojects/Fable.svg "Mono Build Status")](https://travis-ci.org/fsprojects/Fable) [![.NET Build Status](https://ci.appveyor.com/api/projects/status/vlmyxg64my74sik5?svg=true ".NET Build Status")](https://ci.appveyor.com/project/alfonsogarciacaro/fable) [![npm](https://img.shields.io/npm/v/fable-compiler.svg)](https://www.npmjs.com/package/fable-compiler) [![Join the chat at https://gitter.im/fsprojects/Fable](https://badges.gitter.im/fsprojects/Fable.svg)](https://gitter.im/fsprojects/Fable?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
+
 
 Fable brings together the power of the [F# compiler](http://fsharp.github.io/FSharp.Compiler.Service/)
 and [Babel](http://babeljs.io) to make JavaScript a true backend for F#.
@@ -10,37 +12,33 @@ Some of its main features are:
 - Works directly on F# source code, no compilation to .NET bytecode needed
 - Optimizes F# code to generate as clean JavaScript as possible
 - Passes location data to Babel to generate source maps
-- Compatible with all Babel plugins and other JS development tools, like Webpack
-- [Support for most of the F# core library and a bit of .NET Base Class Library](docs/compatibility.md)
+- Compatible with all Babel plugins and other JS development tools, like [Webpack](https://webpack.github.io)
+- Support for most of the [F# core library](http://fsprojects.github.io/Fable/docs/compatibility.html) and a bit of .NET Base Class Library
 - Tiny core library included (less than 10KB minified and gzipped) with no runtime
-- Organizes code using ES6 modules 
-- [Interacts seamlessly with other JavaScript libraries](docs/interacting.md)
-- Bonus: [compile NUnit tests to Mocha](docs/testing.md)
+- Organizes code using ES6 modules
+- Interacts seamlessly with other [JavaScript libraries](http://fsprojects.github.io/Fable/docs/interacting.html)
+- Bonus: compile [NUnit tests to Mocha](http://fsprojects.github.io/Fable/docs/compiling.html#Testing)
 
-## Philosophy
+## Usage
 
-- **Clean code**: The compiler must emit JavaScript as readable as possible
-  which plays well with other JS code and development tools, even if this
-  means sacrificing a bit F# semantics. 
-- **Unopinionated**: The project shouldn't compromise with a specific platform
-  and adapt to standard JavaScript in any environment: browser or node.
-- **Open to the community**: If the project is to survive, it needs the support of the community. For that, maintainers should compromise to keep the project documented and make it easy for people to contribute. A plugin system is also planned.
+A beta version has been released to [npm](https://www.npmjs.com/package/fable-compiler)! You can install and run it just by typing:
 
-## Installing
-
-The project is still in testing phase and hasn't been packaged yet. If you wan to try it out,
-make sure you have [F# 4.0 with .NET/Mono](http://fsharp.org) and an updated version of [node.js](https://nodejs.org) installed.
-Download the repo and run:
+```shell
+npm install -g fable-compiler
+fable path/to/your/project.fsproj
 ```
-build.cmd   // on windows    
-./build.sh  // on unix
-```
-If everything works, follow [these instructions](docs/compiling.md) to compile a F# project or script file to JS.
+
+> Note the package name is `fable-compiler` while the command is just `fable`
+
+> You must have [F# 4](http://fsharp.org) and [node 4.4](https://nodejs.org/en/) or higher installed in your computer.
+
+You can find more detailed instruction about F# to JS compilation in the [docs](http://fsprojects.github.io/Fable/docs/compiling.html).
+Also you can have a look at the [samples](http://fsprojects.github.io/Fable/samples.html) or download them from [here](https://ci.appveyor.com/api/projects/alfonsogarciacaro/fable/artifacts/samples.zip).
 
 ## Contributing
 
 At the moment, the best way to contribute is to battle-test the project, report issues,
-create samples and help promoting it. A [plugin system](docs/plugins.md) is also available
+create samples and help promoting it. A [plugin system](http://fsprojects.github.io/Fable/docs/plugins.html) is also available
 to allow you extend Fable according to you needs.
 
 Issues with the label `discussion` will be also added to ask the opinion of the community
@@ -56,18 +54,11 @@ on different topics like the logo, roadmap, etc.
 - **Information about generic types is not included** in the generated JavaScript, so code that
   depends on this information to be known at runtime for method dispatching may have unexpected behaviour.
 
-- At the moment, comparison for non-primitive values defaults to JS reference comparison so there's
-  **no structural comparison** for records, unions, tuples or collections. This may change in the future
-  upon users' feedback.
-
-- **Map and Set** default to the new ES6 Map and Set classes which must increase performance,
-  but with the downside that adding and removing operations are **mutable**.
-
 - **Debugging the F# code is not perfect**. For example, you may see the debugger jump directly
   to the last expression in many functions. This is normal and due to the optimizations performed
-  on the generated code.
+  on the generated JS code.
 
-To know more, read [Compatibility](docs/compatibility.md).
+To know more, read [Compatibility](http://fsprojects.github.io/Fable/docs/compatibility.html).
 
 ## Acknowledgements
 

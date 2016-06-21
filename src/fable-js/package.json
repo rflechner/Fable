@@ -23,10 +23,8 @@
     "babel-plugin-transform-es2015-spread": "^6.4.0",
     "babel-plugin-transform-es5-property-mutators": "^6.5.0",
     "babel-template": "^6.5.0",
-    "command-line-args": "^2.1.6"
-  },
-  "devDependencies": {
-    "mocha": "^2.4.5"
+    "command-line-args": "^2.1.6",
+    "semver": "^5.1.0"
   },
   "author": "Alfonso Garcia-Caro",
   "license": "Apache-2.0",
@@ -42,5 +40,9 @@
   "bugs": {
     "url": "https://github.com/fsprojects/Fable/issues"
   },
-  "homepage": "https://github.com/fsprojects/Fable#readme"
+  "homepage": "https://github.com/fsprojects/Fable#readme",
+  "engineStrict": true,
+  "engines": {
+    "node": ">=4.4.0"
+  }
 }

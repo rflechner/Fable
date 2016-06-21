@@ -4,6 +4,19 @@ open NUnit.Framework
 open Fable.Tests.Util
 
 [<Test>]
+let ``Pattern matching with lists works``() =
+    match [] with [] -> true | _ -> false
+    |> equal true
+    match [1] with [] -> 0 | [x] -> 1 | x::xs -> 2
+    |> equal 1
+    match [1;2;3] with [] -> 0 | _::x::xs -> x | _ -> 3
+    |> equal 2
+    match [1.;2.;3.;4.] with [] -> 0 | [x] -> 1 | x::xs -> xs.Length
+    |> equal 3
+    match ["a";"b"] with [] -> 0 | ["a";"b"] -> 1 | _ -> 2
+    |> equal 1
+
+[<Test>]
 let ``List.Length works``() =
       let xs = [1; 2; 3; 4]
       equal 4 xs.Length
@@ -123,6 +136,30 @@ let ``List.findIndex works``() =
       |> equal 1
 
 [<Test>]
+let ``List.findBack works``() =
+    let xs = [1.; 2.; 3.; 4.]
+    xs |> List.find ((>) 4.) |> equal 1.
+    xs |> List.findBack ((>) 4.) |> equal 3.
+
+[<Test>]
+let ``List.findIndexBack works``() =
+    let xs = [1.; 2.; 3.; 4.]
+    xs |> List.findIndex ((>) 4.) |> equal 0
+    xs |> List.findIndexBack ((>) 4.) |> equal 2
+
+[<Test>]
+let ``List.tryFindBack works``() =
+    let xs = [1.; 2.; 3.; 4.]
+    xs |> List.tryFind ((>) 4.) |> equal (Some 1.)
+    xs |> List.tryFindBack ((>) 4.) |> equal (Some 3.)
+
+[<Test>]
+let ``List.tryFindIndexBack works``() =
+    let xs = [1.; 2.; 3.; 4.]
+    xs |> List.tryFindIndex ((>) 4.) |> equal (Some 0)
+    xs |> List.tryFindIndexBack ((>) 4.) |> equal (Some 2)      
+
+[<Test>]
 let ``List.fold works``() =
       [1; 2; 3; 4]
       |> List.fold (+) 0
@@ -140,6 +177,12 @@ let ``List.foldBack works``() =
       [1; 2; 3; 4]
       |> List.foldBack (fun x acc -> acc - x) <| 100
       |> equal 90 
+
+[<Test>]
+let ``List.foldBack with composition works``() =
+      [1; 2; 3; 4]
+      |> List.foldBack (fun x acc -> acc >> (+) x) <| id <| 2
+      |> equal 12
 
 [<Test>]
 let ``List.foldBack2 works``() =
@@ -298,6 +341,8 @@ let ``List.partition works``() =
       let xs = [1; 2; 3; 4; 5; 6]
       let ys, zs = xs |> List.partition (fun x -> x % 2 = 0)
       List.sum zs |> equal 9
+      equal 2 ys.[0]
+      equal 5 zs.[2]
       
 [<Test>]
 let ``List.permute works``() =
@@ -314,6 +359,15 @@ let ``List.pick works``() =
             | 2 -> Some x
             | _ -> None)
       |> equal 2 
+
+[<Test>]
+let ``List.range works``() =
+    [1..5]
+    |> List.reduce (+)
+    |> equal 15
+    [0..2..9]
+    |> List.reduce (+)
+    |> equal 20
 
 [<Test>]
 let ``List.reduce works``() =
@@ -468,3 +522,28 @@ let ``List "snail" to append works``() =
       let zs = ys @ xs
       zs.Head + zs.Tail.Head
       |> equal 1
+
+[<Test>]
+let ``List.tryItem works``() =
+    let xs = [1.; 2.; 3.; 4.]
+    List.tryItem 3 xs |> equal (Some 4.)
+    List.tryItem 4 xs |> equal None
+    List.tryItem -1 xs |> equal None
+
+[<Test>]
+let ``List.tryHead works``() =
+    let xs = [1.; 2.; 3.; 4.]
+    List.tryHead xs |> equal (Some 1.)
+    List.tryHead [] |> equal None
+
+[<Test>]
+let ``List.last works``() =
+    let xs = [1.; 2.; 3.; 4.]
+    xs |> List.last
+    |> equal 4.
+    
+[<Test>]
+let ``List.tryLast works``() =
+    let xs = [1.; 2.; 3.; 4.]
+    List.tryLast xs |> equal (Some 4.)
+    List.tryLast [] |> equal None

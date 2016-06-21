@@ -29,13 +29,38 @@ let ``String.Format with extra formatting works``() =
       let dt = DateTime(2014, 9, 26).AddMinutes(19.)
       String.Format("{0:F2} {0:P2} {1:yy/MM/dd HH:mm}", i, dt)
       |> equal "0.55 54.67 % 14/09/26 00:19"
+          
+[<Test>]
+let ``Padding works``() =
+    "3.14".PadLeft(10)      |> equal "      3.14"
+    "3.14".PadRight(10)     |> equal "3.14      "
+    "22".PadLeft(10, '0')   |> equal "0000000022"
+    "-22".PadRight(10, 'X') |> equal "-22XXXXXXX"
+    "333".PadLeft(1) |> equal "333"
+    
+[<Test>]
+let ``Padding with sprintf works``() =
+    sprintf "%10.1f" 3.14  |> equal "       3.1"
+    sprintf "%-10.1f" 3.14 |> equal "3.1       "
+    sprintf "%+010i" 22    |> equal "+000000022"
+    sprintf "%+0-10i" -22  |> equal "-22       "
+
+[<Test>]
+let ``Padding with String.Format works``() =
+    String.Format("{0,10:F1}", 3.14)  |> equal "       3.1"
+    String.Format("{0,-10:F1}", 3.14) |> equal "3.1       "
+    String.Format("{0,10}", 22)       |> equal "        22"
+    String.Format("{0,-10}", -22)     |> equal "-22       "
 
 // Conversions
 
 [<Test>]
 let ``Conversion to char works``() =
-      let c = char "h"
-      equal "h" (string c)
+      let c1 = char "h"
+      equal "h" (string c1)
+
+      let c2 = char 97
+      equal "a" (string c2)
 
 [<Test>]
 let ``Conversion to int works``() =
@@ -48,6 +73,21 @@ let ``Conversion to float works``() =
       (string 5.).StartsWith("5") |> equal true
       equal 5.25 (float "5.25")
       (string 5.25).StartsWith("5.25") |> equal true
+
+// System.String - constructors
+
+[<Test>]
+let ``String.ctor(char[]) works``() =
+      System.String([|'f'; 'a'; 'b'; 'l'; 'e'|])
+      |> equal "fable"
+
+let ``String.ctor(char, int) works``() =
+      System.String('f', 5)
+      |> equal "fffff"
+
+let ``String.ctor(char[], int, int) works``() =
+      System.String([|'f'; 'a'; 'b'; 'l'; 'e'|], 1, 3)
+      |> equal "abl"
 
 // System.String - static methods
 
@@ -222,3 +262,10 @@ let ``String.mapi works``() =
 let ``String.replicate works``() =
       String.replicate 3 "hi there"
       |> equal "hi therehi therehi there" 
+
+[<Test>]
+let ``System.Convert.ToString works``() =
+      let x = 45
+      Convert.ToString(x) |> equal "45"
+      Convert.ToString(x, 2) |> equal "101101"
+      Convert.ToString(x, 16) |> equal "2d"
